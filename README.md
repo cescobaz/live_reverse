@@ -19,16 +19,16 @@ defmodule MyAppWeb.Cart do
     do: {:cont, assign(socket, cart_id: nil, cart: nil)}
 
   @impl true
-  def handle_params(%{"cart_id" => id}, _uri, socket),
+  def handle_params(_arg, %{"cart_id" => id}, _uri, socket),
     do: {:cont, assign(socket, :cart_id, id)}
 
-  def handle_params(_params, _uri, socket), do: {:cont, socket}
+  def handle_params(_arg, _params, _uri, socket), do: {:cont, socket}
 
   @impl true
-  def handle_info({:cart_updated, cart}, socket),
+  def handle_info(_arg, {:cart_updated, cart}, socket),
     do: {:halt, assign(socket, :cart, cart)}
 
-  def handle_info(_msg, socket), do: {:cont, socket}
+  def handle_info(_arg, _msg, socket), do: {:cont, socket}
 end
 
 defmodule MyAppWeb.ShopLive do
@@ -43,17 +43,20 @@ If you know React, a feature module plays the role of a custom hook.
 
 ## Features
 
-- **LiveView-style callbacks:** `mount/4`, `handle_params/3`,
-  `handle_info/2`, `handle_event/3` and `handle_async/3`, checked with
-  `@impl`. Each returns `{:cont, socket}` to let the LiveView (and the next
-  hooks) run, or `{:halt, socket}` to stop there.
+- **LiveView-style callbacks:** `mount/4`, `handle_params/4`,
+  `handle_info/3`, `handle_event/4` and `handle_async/4`, checked with
+  `@impl`. They take the LiveView arguments plus the `on_mount` argument
+  first, so a feature can be configured per LiveView:
+  `on_mount {MyAppWeb.Chat, "chat:lobby"}`. Each returns `{:cont, socket}`
+  to let the LiveView (and the next hooks) run, or `{:halt, socket}` to
+  stop there.
 - **Only what you define is attached.** The callbacks a module implements
-  are picked at compile time. A module without `handle_params/3` works in a
+  are picked at compile time. A module without `handle_params/4` works in a
   nested LiveView.
 - **Mount more than once:** with `use LiveReverse, attach: :each` (the
-  default) every `on_mount {Module, arg}` entry gets its own hooks; with
-  `attach: :once` the entries share one set of hooks and the module merges
-  their config.
+  default) every `on_mount {Module, arg}` entry gets its own hooks, each
+  with its own `arg`; with `attach: :once` the entries share one set of
+  hooks, which get the list of every entry's `arg`.
 - **Install and detach at runtime:** `LiveReverse.install/4` adds a feature
   after mount, for example from a `handle_event/3`, and
   `LiveReverse.detach/3` removes it again, calling the optional `unmount/2`

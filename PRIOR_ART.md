@@ -19,8 +19,8 @@ defmodule MyAppWeb.Cart do
   def mount(_arg, _params, _session, socket), do: {:cont, assign(socket, cart: nil)}
 
   @impl true
-  def handle_info({:cart_updated, cart}, socket), do: {:halt, assign(socket, :cart, cart)}
-  def handle_info(_msg, socket), do: {:cont, socket}
+  def handle_info(_arg, {:cart_updated, cart}, socket), do: {:halt, assign(socket, :cart, cart)}
+  def handle_info(_arg, _msg, socket), do: {:cont, socket}
 end
 
 # in any LiveView
@@ -29,15 +29,17 @@ on_mount MyAppWeb.Cart
 
 Key properties:
 
-- A **behaviour** whose callbacks mirror the LiveView ones (`mount/4`,
-  `handle_params/3`, `handle_info/2`, `handle_event/3`, `handle_async/3`),
-  returning `{:cont, socket}` / `{:halt, socket}`.
+- A **behaviour** whose callbacks mirror the LiveView ones with the
+  `on_mount` argument added first (`mount/4`, `handle_params/4`,
+  `handle_info/3`, `handle_event/4`, `handle_async/4`), returning
+  `{:cont, socket}` / `{:halt, socket}`.
 - Only the callbacks a module defines are attached, decided at compile time.
-  A feature module without `handle_params/3` therefore works in a nested LiveView.
+  A feature module without `handle_params/4` therefore works in a nested LiveView.
 - `use LiveReverse, attach: :once | :each` decides whether several
-  `on_mount` entries of the same module share one set of hooks (`:once`, with
-  the module merging its own config, see `GardenWeb.Hooks.Params`\*) or each
-  attach their own (`:each`, hook id `{module, arg}`).
+  `on_mount` entries of the same module share one set of hooks (`:once`,
+  whose callbacks get the list of every entry's argument; see
+  `GardenWeb.Hooks.Params`\*) or each attach their own (`:each`, hook id
+  `{module, arg}`, callbacks get their own argument).
 
 The closest mental model outside Elixir is a **React custom hook**
 (`useSearch()`, `useParams()`): one feature, its own state and handlers,
@@ -200,20 +202,20 @@ directly. A feature module that owns a stream has the same issue.
 | | Curiosum hooked widgets | LiveReverse |
 |---|---|---|
 | Unit of reuse | widget module (state + hooks + render) | feature module (hooks only, no render) |
-| Contract | convention (`hooked_*` function names) | behaviour with `@impl` checks, LiveView-parity names |
+| Contract | convention (`hooked_*` function names) | behaviour with `@impl` checks, LiveView names plus the `on_mount` arg first |
 | Mounted by | parent's `mount/3` calls `assign_component/3` | `on_mount Module` / `on_mount {Module, arg}` |
 | Which hooks attach | all three, always | only the callbacks the module defines, picked at compile time |
-| Config | keyword opts at runtime, stored in the struct | `on_mount` arg (compile time), merged by the module, or a generated module per config |
-| Several instances | one shared set of hooks, attached once by counting structs; instance key in each event | `attach: :once` (one set of hooks, merged config) or `attach: :each` (hooks per arg; callbacks can't tell instances apart) |
-| Detach | yes, when the last instance goes (counted by the widget) | yes, `detach/3`; the module's `unmount/2` decides whether the hooks go (`{:keep, _}` / `{:detach, _}`) |
+| Config | keyword opts at runtime, stored in the struct | `on_mount` arg (compile time), passed to every callback, or a generated module per config |
+| Several instances | one shared set of hooks, attached once by counting structs; instance key in each event | `attach: :once` (one set of hooks, callbacks get every arg) or `attach: :each` (hooks per arg, each callback gets its own arg) |
+| Detach | yes, when the last instance goes (counted by the widget) | yes, `detach/3` calls `unmount/2` for cleanup; with `attach: :once` the hooks go with the last arg |
 | Where state lives | struct in `socket.assigns` | wherever the module puts it (assigns, `socket.private`) |
-| Nested LiveView | attaches `:handle_params` always, so it would fail there (our reading of `attach_hook/4`; the article doesn't cover it) | works when the module has no `handle_params/3` |
+| Nested LiveView | attaches `:handle_params` always, so it would fail there (our reading of `attach_hook/4`; the article doesn't cover it) | works when the module has no `handle_params/4` |
 
 Ideas worth borrowing:
 
-- **Instance key in event payloads:** a way to make `attach: :each` useful
-  without changing the callback signatures. The event itself says which
-  instance it is for.
+- **Instance key in event payloads:** LiveReverse passes each hook its own
+  `on_mount` argument instead, but events coming from the page still need
+  to say which instance they are for when one module is mounted twice.
 - **Halt only your own events, always continue messages and params:** a
   default to document.
 - **Detaching:** for features added or removed after mount (now `install/4` and `detach/3`).

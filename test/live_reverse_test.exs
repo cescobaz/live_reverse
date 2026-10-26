@@ -7,14 +7,16 @@ defmodule LiveReverseTest do
     use LiveReverse
 
     @impl true
-    def handle_info(_msg, socket), do: {:cont, socket}
+    def handle_info(arg, {:ping, arg}, socket), do: {:halt, assign(socket, :pong, arg)}
+    def handle_info(_arg, _msg, socket), do: {:cont, socket}
   end
 
   defmodule Once do
     use LiveReverse, attach: :once
 
     @impl true
-    def handle_info(_msg, socket), do: {:cont, socket}
+    def handle_info(args, :ping, socket), do: {:cont, assign(socket, :pong, args)}
+    def handle_info(_args, _msg, socket), do: {:cont, socket}
   end
 
   defmodule Unmounted do
@@ -25,12 +27,11 @@ defmodule LiveReverseTest do
       do: {:cont, put_private(socket, __MODULE__, {arg, params})}
 
     @impl true
-    def unmount(:keep, socket), do: {:keep, socket}
-    def unmount(:bad, socket), do: socket
-    def unmount(_arg, socket), do: {:detach, put_private(socket, __MODULE__, :unmounted)}
+    def unmount(:bad, _socket), do: :bad
+    def unmount(_arg, socket), do: put_private(socket, __MODULE__, :unmounted)
 
     @impl true
-    def handle_info(_msg, socket), do: {:cont, socket}
+    def handle_info(_arg, _msg, socket), do: {:cont, socket}
 
     defp put_private(socket, key, value), do: Phoenix.LiveView.put_private(socket, key, value)
   end
@@ -44,10 +45,17 @@ defmodule LiveReverseTest do
 
   defp hook_ids(socket), do: Enum.map(socket.private.lifecycle.handle_info, & &1.id)
 
-  test "attach: :each attaches the hooks once per argument" do
+  defp send_info(socket, msg) do
+    Enum.reduce_while(socket.private.lifecycle.handle_info, socket, fn hook, socket ->
+      hook.function.(msg, socket)
+    end)
+  end
+
+  test "attach: :each attaches the hooks once per argument and passes it" do
     socket = socket() |> mount(Each, :a) |> mount(Each, :b)
 
     assert hook_ids(socket) == [{Each, :a}, {Each, :b}]
+    assert send_info(socket, {:ping, :b}).assigns.pong == :b
   end
 
   test "attach: :each raises when mounted twice with the same argument" do
@@ -56,10 +64,33 @@ defmodule LiveReverseTest do
     assert_raise ArgumentError, ~r/already attached/, fn -> mount(socket, Each, :a) end
   end
 
-  test "attach: :once attaches the hooks only once" do
+  test "attach: :once attaches the hooks once and passes every argument" do
     socket = socket() |> mount(Once, :a) |> mount(Once, :b)
 
     assert hook_ids(socket) == [Once]
+    assert LiveReverse.args(socket, Once) == [:a, :b]
+    assert send_info(socket, :ping).assigns.pong == [:a, :b]
+  end
+
+  test "attach: :once sees arguments installed after the hooks" do
+    socket = mount(socket(), Once, :a)
+    {:cont, socket} = LiveReverse.install(socket, Once, :b)
+
+    assert send_info(socket, :ping).assigns.pong == [:a, :b]
+  end
+
+  test "attach: :once keeps the hooks until the last argument is detached" do
+    socket = socket() |> mount(Once, :a) |> mount(Once, :b)
+
+    socket = LiveReverse.detach(socket, Once, :a)
+    assert hook_ids(socket) == [Once]
+    assert LiveReverse.args(socket, Once) == [:b]
+
+    socket = LiveReverse.detach(socket, Once, :b)
+    assert hook_ids(socket) == []
+    assert LiveReverse.args(socket, Once) == []
+
+    assert hook_ids(mount(socket, Once, :c)) == [Once]
   end
 
   test "install/4 mounts with :installed params and attaches the hooks" do
@@ -77,25 +108,12 @@ defmodule LiveReverseTest do
     assert hook_ids(socket) == [{Unmounted, :b}]
   end
 
-  test "detach/3 keeps the hooks when unmount/2 says so" do
-    socket = mount(socket(), Unmounted, :keep)
-
-    assert hook_ids(LiveReverse.detach(socket, Unmounted, :keep)) == [{Unmounted, :keep}]
-  end
-
-  test "detach/3 raises on a bad unmount/2 return" do
+  test "detach/3 raises when unmount/2 does not return a socket" do
     socket = mount(socket(), Unmounted, :bad)
 
-    assert_raise ArgumentError, ~r/to return {:keep, socket} or {:detach, socket}/, fn ->
+    assert_raise ArgumentError, ~r/to return a socket, got: :bad/, fn ->
       LiveReverse.detach(socket, Unmounted, :bad)
     end
-  end
-
-  test "attach: :once detaches without unmount/2 and can attach again" do
-    socket = socket() |> mount(Once, :a) |> LiveReverse.detach(Once, :a)
-    assert hook_ids(socket) == []
-
-    assert hook_ids(mount(socket, Once, :b)) == [Once]
   end
 
   test "rejects an unknown :attach value" do
