@@ -216,13 +216,13 @@ defmodule LiveReverse do
         use MyAppWeb, :live_view
         require LiveReverse
 
-        LiveReverse.inline key: MakeQuery do
+        LiveReverse.inline MakeQuery do
           @impl true
           def handle_params(_arg, params, _uri, socket),
             do: {:cont, assign(socket, :query, params["q"])}
         end
 
-        LiveReverse.inline key: Search, arg: :products do
+        LiveReverse.inline Search, arg: :products do
           @impl true
           def handle_params(:products, _params, _uri, socket),
             do: {:cont, assign(socket, :results, search(socket.assigns.query))}
@@ -243,26 +243,21 @@ defmodule LiveReverse do
   a plain module, the feature module is still defined but nothing mounts
   it, and no error is raised.
 
+  `module` is the module name, nested under the caller like a nested
+  `defmodule`.
+
   ## Options
 
-    * `:key` (required) - the module name, nested under the caller like
-      a nested `defmodule`
     * `:arg` - the `on_mount` argument; without it the module is mounted
       bare and its callbacks get `:default`
     * `:attach` - passed to `use LiveReverse`
   """
-  defmacro inline(opts, block \\ []) do
+  defmacro inline(module, opts, block \\ []) do
     opts = Keyword.merge(opts, block)
-
-    {key, opts} =
-      case Keyword.pop(opts, :key) do
-        {nil, _opts} -> raise ArgumentError, "LiveReverse.inline/2 expects a :key option"
-        found -> found
-      end
 
     {body, opts} =
       case Keyword.pop(opts, :do) do
-        {nil, _opts} -> raise ArgumentError, "LiveReverse.inline/2 expects a do block"
+        {nil, _opts} -> raise ArgumentError, "LiveReverse.inline/3 expects a do block"
         found -> found
       end
 
@@ -270,17 +265,17 @@ defmodule LiveReverse do
 
     mod_or_mod_arg =
       case Keyword.fetch(opts, :arg) do
-        {:ok, arg} -> {key, arg}
-        :error -> key
+        {:ok, arg} -> {module, arg}
+        :error -> module
       end
 
     case Keyword.keys(opts) -- [:arg] do
       [] -> :ok
-      unknown -> raise ArgumentError, "unknown LiveReverse.inline/2 options: #{inspect(unknown)}"
+      unknown -> raise ArgumentError, "unknown LiveReverse.inline/3 options: #{inspect(unknown)}"
     end
 
     quote do
-      defmodule unquote(key) do
+      defmodule unquote(module) do
         use LiveReverse, unquote(use_opts)
         unquote(body)
       end

@@ -40,12 +40,12 @@ defmodule LiveReverseTest do
     use Phoenix.LiveView
     require LiveReverse
 
-    LiveReverse.inline key: MakeQuery do
+    LiveReverse.inline MakeQuery do
       @impl true
       def handle_info(_arg, _msg, socket), do: {:cont, socket}
     end
 
-    LiveReverse.inline key: Search, arg: :products, attach: :once do
+    LiveReverse.inline Search, arg: :products, attach: :once do
       @impl true
       def handle_info(_args, _msg, socket), do: {:cont, socket}
     end
@@ -133,7 +133,7 @@ defmodule LiveReverseTest do
     end
   end
 
-  test "inline/2 defines nested modules and mounts them in order" do
+  test "inline/3 defines nested modules and mounts them in order" do
     assert InlineLive.MakeQuery.__live_reverse_attach__() == :each
     assert InlineLive.Search.__live_reverse_attach__() == :once
 
@@ -141,12 +141,12 @@ defmodule LiveReverseTest do
              [{InlineLive.MakeQuery, :default}, {InlineLive.Search, :products}]
   end
 
-  test "inline/2 requires a :key" do
-    assert_raise ArgumentError, ~r/expects a :key/, fn ->
+  test "inline/3 rejects unknown options" do
+    assert_raise ArgumentError, ~r/unknown LiveReverse.inline\/3 options: \[:key\]/, fn ->
       Code.compile_quoted(
         quote do
           require LiveReverse
-          LiveReverse.inline(do: :ok)
+          LiveReverse.inline(Bad, key: "x", do: :ok)
         end
       )
     end
