@@ -15,3 +15,5 @@ First release.
   list of every argument (also returned by `LiveReverse.args/2`).
 - `LiveReverse.install/4` and `LiveReverse.detach/3` to add and remove
   features at runtime.
+- `LiveReverse.inline/2` to define a feature module inside a LiveView and
+  mount it in place, with the `:key`, `:arg` and `:attach` options.

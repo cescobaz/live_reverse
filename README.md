@@ -61,6 +61,9 @@ If you know React, a feature module plays the role of a custom hook.
   after mount, for example from a `handle_event/3`, and
   `LiveReverse.detach/3` removes it again, calling the optional `unmount/2`
   callback for cleanup.
+- **Inline features:** `LiveReverse.inline key: MakeQuery do ... end`
+  defines a feature module nested in the LiveView and mounts it in place,
+  so the hooks read top to bottom in pipeline order.
 
 Like a LiveView's own callbacks, every `handle_*` callback needs a catch-all
 clause: it runs for every params change, message and event, not only the

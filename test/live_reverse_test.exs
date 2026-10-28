@@ -36,6 +36,23 @@ defmodule LiveReverseTest do
     defp put_private(socket, key, value), do: Phoenix.LiveView.put_private(socket, key, value)
   end
 
+  defmodule InlineLive do
+    use Phoenix.LiveView
+    require LiveReverse
+
+    LiveReverse.inline key: MakeQuery do
+      @impl true
+      def handle_info(_arg, _msg, socket), do: {:cont, socket}
+    end
+
+    LiveReverse.inline key: Search, arg: :products, attach: :once do
+      @impl true
+      def handle_info(_args, _msg, socket), do: {:cont, socket}
+    end
+
+    def render(assigns), do: ~H""
+  end
+
   defp socket, do: %Socket{private: %{lifecycle: %Lifecycle{}, live_temp: %{}}}
 
   defp mount(socket, module, arg) do
@@ -113,6 +130,25 @@ defmodule LiveReverseTest do
 
     assert_raise ArgumentError, ~r/to return a socket, got: :bad/, fn ->
       LiveReverse.detach(socket, Unmounted, :bad)
+    end
+  end
+
+  test "inline/2 defines nested modules and mounts them in order" do
+    assert InlineLive.MakeQuery.__live_reverse_attach__() == :each
+    assert InlineLive.Search.__live_reverse_attach__() == :once
+
+    assert Enum.map(InlineLive.__live__().lifecycle.mount, & &1.id) ==
+             [{InlineLive.MakeQuery, :default}, {InlineLive.Search, :products}]
+  end
+
+  test "inline/2 requires a :key" do
+    assert_raise ArgumentError, ~r/expects a :key/, fn ->
+      Code.compile_quoted(
+        quote do
+          require LiveReverse
+          LiveReverse.inline(do: :ok)
+        end
+      )
     end
   end
 

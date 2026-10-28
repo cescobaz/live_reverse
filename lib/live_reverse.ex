@@ -209,6 +209,88 @@ defmodule LiveReverse do
   end
 
   @doc """
+  Defines a feature module in place and mounts it, so a LiveView can list
+  its hooks inline, in pipeline order.
+
+      defmodule MyAppWeb.GardenLive do
+        use MyAppWeb, :live_view
+        require LiveReverse
+
+        LiveReverse.inline key: MakeQuery do
+          @impl true
+          def handle_params(_arg, params, _uri, socket),
+            do: {:cont, assign(socket, :query, params["q"])}
+        end
+
+        LiveReverse.inline key: Search, arg: :products do
+          @impl true
+          def handle_params(:products, _params, _uri, socket),
+            do: {:cont, assign(socket, :results, search(socket.assigns.query))}
+        end
+      end
+
+  This defines `MyAppWeb.GardenLive.MakeQuery` with `use LiveReverse`
+  and adds `on_mount MakeQuery` to the LiveView, then does the same for
+  `Search` with `on_mount {Search, :products}`.
+
+  The block is the body of a separate module: it sees the LiveView's
+  aliases and imports, but not its functions: private ones are out of
+  reach, public ones need the full module name.
+
+  The mount part relies on `Phoenix.LiveView.on_mount/1`, so it only
+  takes effect in a LiveView (`use Phoenix.LiveView`, directly or through
+  `use MyAppWeb, :live_view`). Anywhere else, such as a LiveComponent or
+  a plain module, the feature module is still defined but nothing mounts
+  it, and no error is raised.
+
+  ## Options
+
+    * `:key` (required) - the module name, nested under the caller like
+      a nested `defmodule`
+    * `:arg` - the `on_mount` argument; without it the module is mounted
+      bare and its callbacks get `:default`
+    * `:attach` - passed to `use LiveReverse`
+  """
+  defmacro inline(opts, block \\ []) do
+    opts = Keyword.merge(opts, block)
+
+    {key, opts} =
+      case Keyword.pop(opts, :key) do
+        {nil, _opts} -> raise ArgumentError, "LiveReverse.inline/2 expects a :key option"
+        found -> found
+      end
+
+    {body, opts} =
+      case Keyword.pop(opts, :do) do
+        {nil, _opts} -> raise ArgumentError, "LiveReverse.inline/2 expects a do block"
+        found -> found
+      end
+
+    {use_opts, opts} = Keyword.split(opts, [:attach])
+
+    mod_or_mod_arg =
+      case Keyword.fetch(opts, :arg) do
+        {:ok, arg} -> {key, arg}
+        :error -> key
+      end
+
+    case Keyword.keys(opts) -- [:arg] do
+      [] -> :ok
+      unknown -> raise ArgumentError, "unknown LiveReverse.inline/2 options: #{inspect(unknown)}"
+    end
+
+    quote do
+      defmodule unquote(key) do
+        use LiveReverse, unquote(use_opts)
+        unquote(body)
+      end
+
+      require Phoenix.LiveView
+      Phoenix.LiveView.on_mount(unquote(mod_or_mod_arg))
+    end
+  end
+
+  @doc """
   Runs `module`'s `mount/4` with `arg` and, unless it halts, attaches its
   hooks, the same way an `on_mount {module, arg}` entry does.
 
